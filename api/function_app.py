@@ -523,7 +523,7 @@ def get_ice_server_token(req: Request) -> JSONResponse:
             headers={"Content-Type": "application/json"}
         )
     else:
-        return func.HttpResponse(response.status_code)
+        return func.HttpResponse(f"Error {response.status_code}: {response.text}")
     
 
 @app.route(route="get-speech-token", methods=[func.HttpMethod.GET, func.HttpMethod.POST])
