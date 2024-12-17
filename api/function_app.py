@@ -9,6 +9,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+import aiohttp
 
 # Azure Function App
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -43,93 +44,17 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "get_bonus_points",
-            "description": "Check the amount of customer bonus / loyalty points",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {
-                        "type": "number",
-                        "description": "Four digit account number (i.e., 1005, 2345, etc.)"
-                    },
-                },
-                "required": ["account_id"],
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_order_details",
-            "description": "Check customer account for expected delivery date of existing orders based on the provided parameters",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {
-                        "type": "number",
-                        "description": "Four digit account number (i.e., 1005, 2345, etc.)"
-                    },
-                },
-                "required": ["account_id"],
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "order_product",
-            "description": "Order a product based on the provided parameters",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "account_id": {
-                        "type": "number",
-                        "description": "Four digit account number (i.e., 1005, 2345, etc.)"
-                    },
-                    "product_name": {
-                        "type": "string",
-                        "description": "Name of the product to order (i.e., Elysian Voyager, Terra Roamer, AceMaster 3000, Server & Style)"
-                    },
-                    "quantity": {
-                        "type": "number",
-                        "description": "Quantity of the product to order (i.e., 1, 2, etc.)"
-                    }
-                },
-                "required": ["account_id", "product_name", "quantity"],
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_product_information",
-            "description": "Find information about a product based on a user question. Use only if the requested information if not already available in the conversation context.",
+            "name": "get_basamh_information",
+            "description": "This function have access to all of Basamh company's internal documents and can provide information to basamh employees.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "user_question": {
                         "type": "string",
-                        "description": "User question (i.e., do you have tennis shoes for men?, etc.)"
+                        "description": "User question (i.e., How is the budget for business trip?, etc.)"
                     },
                 },
                 "required": ["user_question"],
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "bing_web_search",
-            "description": "Search the web for questions about recent events, news or outdoor activities related forecasts. Use only if the requested information is not already available in the conversation context.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "search_term": {
-                        "type": "string",
-                        "description": "User question optimized for a web search engine (examples: How will the weather be like this weekend? Current hiking restrictions in the Grand Canyon, etc.)"
-                    },
-                },
-                "required": ["search_term"],
             }
         }
     }
@@ -141,6 +66,26 @@ client = openai.AsyncAzureOpenAI(
     api_key=api_key,
     api_version="2023-09-01-preview"
 )
+
+async def get_basamh_information(user_question, chat_history):
+    """ Asynchronous generator to stream data from the API. """
+    url = "https://musaed-backend.azurewebsites.net/get-oai-response/"
+    
+    payload = {
+        "question": user_question,
+        "chat_history": chat_history
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as response:
+            async for line in response.content:
+                if res_chunk := line.decode("utf-8").strip():  # Ensure the line is not empty
+                    try:
+                        parsed_chunk = json.loads(res_chunk)
+                        if answer_chunk := parsed_chunk.get("answer_chunk"):
+                            yield answer_chunk
+                    except json.JSONDecodeError:
+                        print(f"Non-JSON response: {res_chunk}")
 
 def get_product_information(user_question, categories='*', top_k=1):
     """ Vectorize user query to search Cognitive Search vector search on index_name. Optional filter on categories field. """
@@ -433,50 +378,37 @@ async def stream_processor(response, messages):
                         try:
                             arguments = json.loads(func_call["function"]["arguments"])
                             print(f"Function generation requested, calling function", func_call)
-                            messages.append({
-                                "content": None,
-                                "role": "assistant",
-                                "tool_calls": [func_call]
-                            })
+                            # messages.append({
+                            #     "content": None,
+                            #     "role": "assistant",
+                            #     "tool_calls": [func_call]
+                            # })
 
                             available_functions = {
-                                "get_product_information": get_product_information,
-                                "bing_web_search": bing_web_search,
-                                "get_bonus_points": get_bonus_points,
-                                "get_order_details": get_order_details,
-                                "order_product": order_product
+                                "get_basamh_information": get_basamh_information,
+                                # "bing_web_search": bing_web_search,
+                                # "get_bonus_points": get_bonus_points,
+                                # "get_order_details": get_order_details,
+                                # "order_product": order_product
                             }
                             function_to_call = available_functions[func_call["function"]["name"]] 
+                            # function_response = function_to_call(**arguments)
 
-                            function_response = function_to_call(**arguments)
+                            # response_chunks = []
+                            if function_to_call == get_basamh_information:
+                                arguments.update({"chat_history": messages})
+                                async for chunk in get_basamh_information(**arguments):
+                                    yield chunk
+                                # response_chunks.append(chunk)
 
-                            if function_to_call == get_product_information:
-                                product_info = json.loads(function_response)
-                                function_response = product_info['description']
-                                products = [display_product_info(product_info)]
-                                yield json.dumps(products[0])
+                            # function_response = "".join(response_chunks)
 
-                            messages.append({
-                                "tool_call_id": func_call["id"],
-                                "role": "tool",
-                                "name": func_call["function"]["name"],
-                                "content": function_response
-                            })
 
-                            final_response = await client.chat.completions.create(
-                                model=deployment,
-                                temperature=temperature,
-                                max_tokens=1000,
-                                messages=messages,
-                                stream=True
-                            )
+                            # messages.append({
+                            #     "role": "assistant",
+                            #     "content": function_response
+                            # })
 
-                            async for chunk in final_response:
-                                if len(chunk.choices) > 0:
-                                    delta = chunk.choices[0].delta
-                                    if delta.content:
-                                        await asyncio.sleep(0.01)
-                                        yield delta.content
 
                         except Exception as e:
                             print(e)
