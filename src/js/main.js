@@ -15,7 +15,7 @@ You are an AI assistant focused on delivering brief product details and assistin
 `
 
 var TTSVoice = "en-US-AvaMultilingualNeural" // Update this value if you want to use a different voices
-const CogSvcRegion = "westeurope" // Fill your Azure cognitive services region here, e.g. westus2
+const CogSvcRegion = "swedencentral" // Fill your Azure cognitive services region here, e.g. westus2
 var TalkingAvatarCharacter = "Meg"
 var TalkingAvatarStyle = "formal"
 const continuousRecording = false
@@ -402,7 +402,7 @@ window.stopSession = () => {
 }
 
 window.startRecording = () => {
-  const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, 'westeurope');
+  const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, 'swedencentral');
   speechConfig.authorizationToken = token;
   speechConfig.SpeechServiceConnection_LanguageIdMode = "Continuous";
   var autoDetectSourceLanguageConfig = SpeechSDK.AutoDetectSourceLanguageConfig.fromLanguages(supported_languages);
